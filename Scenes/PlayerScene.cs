@@ -24,7 +24,15 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 	private const float perfectWindow = 0.2f;
 	private const float goodWindow = 0.4f;
 
-	private readonly SDL.FColor defaultGlowColor = new(0.35f, 0.35f, 0.6f, 1f);
+	private static readonly SDL.FColor defaultGlowColor = new(0.35f, 0.35f, 0.6f, 1f);
+	private static readonly SDL.FColor bgColor = new(0.08f, 0.08f, 0.1f, 1f);
+	private static readonly SDL.FColor columnColor = new(0.15f, 0.15f, 0.2f, 1f);
+	private static readonly SDL.FColor hitLineColor = new(1f, 1f, 1f, 1f);
+	private static readonly SDL.FColor columnSeparatorColor = new(0.05f, 0.05f, 0.05f, 1f);
+	private static readonly SDL.FColor noteColor = new(1f, 1f, 0f, 1f);
+	private static readonly SDL.FColor mineColor = new(1f, 0f, 0f, 1f);
+	private static readonly SDL.FColor liftColor = new(0f, 1f, 0f, 1f);
+	private static readonly SDL.FColor holdBodyColor = new(0.4f, 0.4f, 0f, 1f);
 
 	// Combo & Score
 	private int combo = 0;
@@ -92,16 +100,15 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 		// Background
 		renderer.DrawRectFilled(
 			new SDL.FRect { X = 0, Y = 0, W = area.W, H = area.H },
-			new SDL.FColor(0.08f, 0.08f, 0.1f, 1f)
+			bgColor
 		);
 
 		// -------------------------
 		// Columns + glow
-		var baseColor = new SDL.FColor(0.15f, 0.15f, 0.2f, 1f);
 		for (byte i = 0; i < 4; i++)
 		{
 			ref var state = ref columnStates[i];
-			SDL.FColor col = LerpColor(baseColor, state.glowColor, state.glowValue);
+			SDL.FColor col = LerpColor(columnColor, state.glowColor, state.glowValue);
 
 			renderer.DrawRectFilled(
 				new SDL.FRect { X = columnWidth * i, Y = 100, W = columnWidth, H = area.H - 200 },
@@ -110,7 +117,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 
 			renderer.DrawRectFilled(
 				new SDL.FRect { X = columnWidth * i + columnWidth - 2, Y = 100, W = 2, H = area.H - 200 },
-				new SDL.FColor(0.05f, 0.05f, 0.05f, 1f)
+				columnSeparatorColor
 			);
 
 			state.glowValue = Math.Max(0f, state.glowValue - (float)deltaTime.TotalSeconds * 2f);
@@ -120,7 +127,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 		// Hit line
 		renderer.DrawRectFilled(
 			new SDL.FRect { X = 0, Y = hitLineY, W = columnWidth * 4, H = 4 },
-			new SDL.FColor(1f, 1f, 1f, 1f)
+			hitLineColor
 		);
 
 		// -------------------------
@@ -149,20 +156,18 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 		// -------------------------
 		// Notes + automatic misses
 		float distanceBetweenBeats = 400;
-		var noteColor = new SDL.FColor(1f, 1f, 0f, 1f);
-		var mineColor = new SDL.FColor(1f, 0f, 0f, 1f);
-		var liftColor = new SDL.FColor(0f, 1f, 0f, 1f);
-
-		for (int i = 0; i < simfile.Charts[chartIndex].Notes.Length; i++)
+		for (var i = 0; i < simfile.Charts[chartIndex].Notes.Length; i++)
 		{
 			ref var note = ref simfile.Charts[chartIndex].Notes[i];
 
-			for (int j = 0; j < 4; j++)
+			for (byte j = 0; j < SSCNoteRow.Length; j++)
 			{
 				if (note.row[j] == SSCNoteType.Empty) continue;
 
 				ref var judgeState = ref judgeStates[i, j];
 				if (judgeState.judgement != Judgement.Unjudged) continue;
+
+				if (note.row[j] == SSCNoteType.Tail) goto judgement; // skip rendering the tail
 
 
 				float noteY =
@@ -176,6 +181,31 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 				if (noteY > area.H) continue;
 
 				// Draw note
+				// hold/roll body first
+				if (note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead)
+				{
+					for (var k = i + 1; k < simfile.Charts[chartIndex].Notes.Length; ++k)
+					{
+						if (simfile.Charts[chartIndex].Notes[k].row[j] != SSCNoteType.Tail) continue;
+
+						renderer.DrawRectFilled(
+							new SDL.FRect
+							{
+								X = columnWidth * j,
+								Y = noteY,
+								W = columnWidth,
+								H = (simfile.Charts[chartIndex].Notes[k].beat.Value - note.beat.Value) * distanceBetweenBeats
+#if FLIP_SCROLL_DIRECTION
+								* -1f
+#endif
+							},
+							holdBodyColor
+						);
+
+						break;
+					}
+				}
+
 				renderer.DrawRectFilled(
 					new SDL.FRect { X = columnWidth * j, Y = noteY, W = columnWidth, H = noteHeight },
 					note.row[j] switch
@@ -186,6 +216,8 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 					}
 				);
 
+				judgement:
+				// judgement
 				var diff = currentBeat - note.beat.Value;
 				var aDiff = Math.Abs(diff);
 
@@ -224,30 +256,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 			}
 		}
 
-		// -------------------------
-		// Render judgments
 		float judgmentYFixed = hitLineY - 50;
-		//for (var i = judgeStates.GetLength(0) - 1; i >= 0; --i)
-		//{
-		//    var @break = false;
-		//    for (var j = 0; j < judgeStates.GetLength(1); ++j)
-		//    {
-		//        var state = judgeStates[i, j];
-
-		//        if (state.judgement == Judgement.Unjudged) continue;
-		//        @break = true;
-		//    }
-
-		//    if (@break) break;
-		//}
-		//for (int i = judgments.Count - 1; i >= 0; i--)
-		//{
-		//    var j = judgments[i];
-		//    renderer.DrawText(j.text, area.W / 2 - 30, j.y, j.color);
-		//    j.timer -= (float)deltaTime.TotalSeconds;
-		//    if (j.timer <= 0) judgments.RemoveAt(i);
-		//    else judgments[i] = j;
-		//}
 
 		// Draw combo & score
 		if (combo > 1)
