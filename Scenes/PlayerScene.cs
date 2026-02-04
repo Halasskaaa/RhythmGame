@@ -50,10 +50,10 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 
 		switch (k.Key)
 		{
-			case SDL.Keycode.A: state = ref columnStates[0]; break;
-			case SDL.Keycode.S: state = ref columnStates[1]; break;
-			case SDL.Keycode.D: state = ref columnStates[2]; break;
-			case SDL.Keycode.F: state = ref columnStates[3]; break;
+			case SDL.Keycode.D: state = ref columnStates[0]; break;
+			case SDL.Keycode.F: state = ref columnStates[1]; break;
+			case SDL.Keycode.J: state = ref columnStates[2]; break;
+			case SDL.Keycode.K: state = ref columnStates[3]; break;
 		}
 
 		if (Unsafe.IsNullRef(ref state)) return;
@@ -124,37 +124,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 		}
 
 		// -------------------------
-		// Hit line
-		renderer.DrawRectFilled(
-			new SDL.FRect { X = 0, Y = hitLineY, W = columnWidth * 4, H = 4 },
-			hitLineColor
-		);
-
-		// -------------------------
-		// Key caps
-		const string KL0 = "A";
-		const string KL1 = "S";
-		const string KL2 = "D";
-		const string KL3 = "F";
-		ReadOnlySpan<string> keyLabels = [KL0, KL1, KL2, KL3];
-
-		for (byte i = 0; i < keyLabels.Length; i++)
-		{
-			renderer.DrawRectFilled(
-				new SDL.FRect { X = columnWidth * i + 20, Y = hitLineY + 20, W = columnWidth - 40, H = 60 },
-				new SDL.FColor(0.25f, 0.25f, 0.3f, 1f)
-			);
-
-			renderer.DrawText(
-				keyLabels[i],
-				columnWidth * i + columnWidth / 2 - 6,
-				hitLineY + 35,
-				new SDL.FColor(1f, 1f, 1f, 1f)
-			);
-		}
-
-		// -------------------------
-		// Notes + automatic misses
+		// Notes + judgement
 		float distanceBetweenBeats = 400;
 		for (var i = 0; i < simfile.Charts[chartIndex].Notes.Length; i++)
 		{
@@ -165,9 +135,9 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 				if (note.row[j] == SSCNoteType.Empty) continue;
 
 				ref var judgeState = ref judgeStates[i, j];
-				if (judgeState.judgement != Judgement.Unjudged) continue;
+				if (judgeState.judgement != Judgement.Unjudged && !judgeState.holdOngoing) continue;
 
-				if (note.row[j] == SSCNoteType.Tail) goto judgement; // skip rendering the tail
+				if (note.row[j] == SSCNoteType.Tail) continue; // skip rendering the tail
 
 
 				float noteY =
@@ -202,6 +172,8 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 							holdBodyColor
 						);
 
+						judgeState.holdEndBeat = simfile.Charts[chartIndex].Notes[k].beat.Value;
+
 						break;
 					}
 				}
@@ -216,44 +188,104 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 					}
 				);
 
-				judgement:
 				// judgement
-				var diff = currentBeat - note.beat.Value;
-				var aDiff = Math.Abs(diff);
 
-				if (diff > goodWindow)
+				if (judgeState.holdOngoing)
 				{
-					judgeState.judgement = Judgement.Miss;
-					combo = 0;
+					if (judgeState.holdEndBeat < currentBeat)
+					{
+						judgeState.holdOngoing = false;
+						combo++;
+					}
+					else if (!columnStates[j].pressing)
+					{
+						if (judgeState.holdEndBeat - currentBeat > goodWindow)
+						{
+							judgeState.holdOngoing = false;
+							judgeState.judgement = Judgement.Miss;
+							combo = 0;
+						}
+
+					}
 				}
-				else if (columnStates[j].pressedThisFrame)
+				else
 				{
-					const float badIgnoreDiff = 1 - goodWindow;
-					if (aDiff > goodWindow && aDiff < badIgnoreDiff)
+					var diff = currentBeat - note.beat.Value;
+					var aDiff = Math.Abs(diff);
+
+					if (diff > goodWindow)
 					{
-						judgeState.judgement = Judgement.Bad;
+						judgeState.judgement = Judgement.Miss;
 						combo = 0;
-						columnStates[j].pressedThisFrame = false;
-						columnStates[j].glowColor = new SDL.FColor(1f, 0f, 0f, 1f);
 					}
-					else if (aDiff <= goodWindow && aDiff > perfectWindow)
+					else if (columnStates[j].pressedThisFrame)
 					{
-						judgeState.judgement = diff > 0 ? Judgement.GoodEarly : Judgement.GoodLate;
-						columnStates[j].pressedThisFrame = false;
-						columnStates[j].glowColor = new SDL.FColor(0f, 1f, 0f, 1f);
-						combo++;
-						score++;
-					}
-					else
-					{
-						judgeState.judgement = Judgement.Perfect;
-						columnStates[j].pressedThisFrame = false;
-						columnStates[j].glowColor = new SDL.FColor(0f, 0f, 1f, 1f);
-						combo++;
-						score++;
+						const float badIgnoreDiff = 1 - goodWindow;
+						if (aDiff > goodWindow && aDiff < badIgnoreDiff)
+						{
+							judgeState.judgement = Judgement.Bad;
+							combo = 0;
+							columnStates[j].pressedThisFrame = false;
+							columnStates[j].glowColor = new SDL.FColor(1f, 0f, 0f, 1f);
+						}
+						else if (aDiff <= goodWindow && aDiff > perfectWindow)
+						{
+							judgeState.judgement = diff > 0 ? Judgement.GoodEarly : Judgement.GoodLate;
+							judgeState.holdOngoing = note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead;
+							columnStates[j].pressedThisFrame = false;
+							columnStates[j].glowColor = new SDL.FColor(0f, 1f, 0f, 1f);
+							combo++;
+							score++;
+						}
+						else
+						{
+							judgeState.judgement = Judgement.Perfect;
+							judgeState.holdOngoing = note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead;
+							columnStates[j].pressedThisFrame = false;
+							columnStates[j].glowColor = new SDL.FColor(0f, 0f, 1f, 1f);
+							combo++;
+							score++;
+						}
 					}
 				}
 			}
+		}
+
+		// -------------------------
+		// Hit line
+		renderer.DrawRectFilled(
+			new SDL.FRect { X = 0, Y = hitLineY, W = columnWidth * 4, H = 4 },
+			hitLineColor
+		);
+
+		// -------------------------
+		// Key caps
+		for (byte i = 0; i < SSCNoteRow.Length; ++i)
+		{
+			// hide hold bodies & missed notes
+			renderer.DrawRectFilled(
+				new SDL.FRect { X = columnWidth * i, Y = hitLineY, W = columnWidth, H = area.H },
+				columnColor
+			);
+
+			renderer.DrawRectFilled(
+				new SDL.FRect { X = columnWidth * i + 20, Y = hitLineY + 20, W = columnWidth - 40, H = 60 },
+				new SDL.FColor(0.25f, 0.25f, 0.3f, 1f)
+			);
+
+			renderer.DrawText(
+				i switch
+				{
+					0 => "D",
+					1 => "F",
+					2 => "J",
+					3 => "K",
+					_ => throw new UnreachableException()
+				},
+				columnWidth * i + columnWidth / 2 - 6,
+				hitLineY + 35,
+				new SDL.FColor(1f, 1f, 1f, 1f)
+			);
 		}
 
 		float judgmentYFixed = hitLineY - 50;
@@ -348,5 +380,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 	private struct JudgeState
 	{
 		public Judgement judgement;
+		public bool holdOngoing;
+		public float holdEndBeat;
 	}
 }
