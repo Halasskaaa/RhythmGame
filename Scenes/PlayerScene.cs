@@ -22,10 +22,15 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
     private bool     countdownOver => countdownNumber <= 0;
 
     // Judgments
-    private const float perfectWindow = 0.2f;
-    private const float goodWindow    = 0.4f;
+    private const float perfectWindow   = 0.5f;
+    private const float goodWindow      = 0.8f;
+    private const float badIgnoreWindow = 0.9f;
+    public const  float holdReHoldTime  = 1.0f;
 
     private static readonly SDL.FColor defaultGlowColor     = new(0.35f, 0.35f, 0.6f, 1f);
+    private static readonly SDL.FColor perfectGlowColor     = new(0f, 0f, 1f, 1f);
+    private static readonly SDL.FColor goodGlowColor        = new(0f, 1f, 0f, 1f);
+    private static readonly SDL.FColor badGlowColor         = new(1f, 0f, 0f, 1f);
     private static readonly SDL.FColor bgColor              = new(0.08f, 0.08f, 0.1f, 1f);
     private static readonly SDL.FColor columnColor          = new(0.15f, 0.15f, 0.2f, 1f);
     private static readonly SDL.FColor hitLineColor         = new(1f, 1f, 1f, 1f);
@@ -68,10 +73,12 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 
     public void OnDrawFrame(TimeSpan deltaTime, ref WindowRenderer renderer)
     {
-        const float columnWidth = 200f;
-        const float noteHeight  = 10f;
-        var         area        = renderer.RenderArea;
-        float       hitLineY    = 100 + (area.H - 200);
+        const float columnWidth        = 200f;
+        const float noteHeight         = 10f;
+        const float columnTopOffset    = 100;
+        const float columnBottomOffset = 2 * columnTopOffset;
+        var         area               = renderer.RenderArea;
+        float       hitLineY           = columnTopOffset + (area.H - columnBottomOffset);
 
         // Countdown
         if (!started)
@@ -112,13 +119,20 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
             SDL.FColor col   = LerpColor(columnColor, state.glowColor, state.glowValue);
 
             renderer.DrawRectFilled(
-                                    new SDL.FRect { X = columnWidth * i, Y = 100, W = columnWidth, H = area.H - 200 },
+                                    new SDL.FRect
+                                    {
+                                        X = columnWidth * i, Y = columnTopOffset, W = columnWidth,
+                                        H = area.H - columnBottomOffset
+                                    },
                                     col
                                    );
 
             renderer.DrawRectFilled(
                                     new SDL.FRect
-                                    { X = columnWidth * i + columnWidth - 2, Y = 100, W = 2, H = area.H - 200 },
+                                    {
+                                        X = columnWidth * i + columnWidth - 2, Y = columnTopOffset, W = 2,
+                                        H = area.H                        - columnBottomOffset
+                                    },
                                     columnSeparatorColor
                                    );
 
@@ -128,18 +142,31 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
         // -------------------------
         // Notes + judgement
         float distanceBetweenBeats = 400;
-        foreach (ref readonly var note in notes.AsSpan())
+        foreach (ref var note in notes.AsSpan())
         {
             // note.singleNote.judgeTime and note.holdNote.judgeTime are in the same place
+            // and so is judgeState.judgedTime
+
+            // unjudged notes have a nan value for this
+            if (!float.IsNaN(note.singleNote.judgeState.judgedTime) &&
+                note.type is not (NoteType.Hold or NoteType.Roll)) continue;
+            // negativeInf=failed & positiveInf=passed
+            if (note.type is (NoteType.Hold or NoteType.Roll) &&
+                float.IsInfinity(note.holdNote.holdJudgeState.lastHeldAt)) continue;
+
             float noteY =
 #if FLIP_SCROLL_DIRECTION
                 area.H + (currentBeat - note.singleNote.judgeTime)
 #else
                     (note.singleNote.judgeTime - currentBeat)
 #endif
-                * distanceBetweenBeats + 100;
+                * distanceBetweenBeats + columnTopOffset;
 
-            if (noteY > area.H) continue;
+#if FLIP_SCROLL_DIRECTION
+            if (noteY < columnTopOffset - noteHeight) continue;
+#else
+            if (noteY > area.H - columnBottomOffset - noteHeight) continue;
+#endif
 
             // Draw note
             // hold/roll body first
@@ -156,7 +183,12 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                                                                                               * -1f
 #endif
                                     },
-                                    holdBodyColor
+                                    LerpColor(holdBodyColor, columnColor,
+                                              float.IsNaN(note.holdNote.holdJudgeState.judgedTime)
+                                                  ? 0
+                                                  : InverseLerp(note.holdNote.holdJudgeState.lastHeldAt,
+                                                                note.holdNote.holdJudgeState.lastHeldAt +
+                                                                holdReHoldTime, currentBeat))
                                    );
 
             drawSingle:
@@ -170,6 +202,132 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                                         _             => noteColor
                                     }
                                    );
+
+            // judgement
+            ref var column = ref columnStates[note.column];
+            if (note.type is NoteType.Tap or NoteType.Hold or NoteType.Roll &&
+                float.IsNaN(note.singleNote.judgeState.judgedTime))
+            {
+                var diff  = note.singleNote.judgeTime - currentBeat;
+                var aDiff = MathF.Abs(diff);
+
+                // miss
+                if (diff < -goodWindow)
+                {
+                    note.singleNote.judgeState.judgedTime = currentBeat;
+                    combo                                 = 0;
+                    if (note.type is NoteType.Hold or NoteType.Roll)
+                    {
+                        note.holdNote.holdJudgeState.lastHeldAt = float.NegativeInfinity;
+                    }
+                }
+
+                if (column.pressedThisFrame)
+                {
+                    // perfect or good
+                    if (aDiff < goodWindow)
+                    {
+                        note.singleNote.judgeState.judgedTime = currentBeat;
+                        combo++;
+                        score++;
+                        column.glowColor = aDiff < perfectWindow ? perfectGlowColor : goodGlowColor;
+                    }
+
+                    // bad
+                    else if (diff < badIgnoreWindow)
+                    {
+                        note.singleNote.judgeState.judgedTime = currentBeat;
+                        combo                                 = 0;
+                        column.glowColor                      = badGlowColor;
+                        if (note.type is NoteType.Hold or NoteType.Roll)
+                        {
+                            note.holdNote.holdJudgeState.lastHeldAt = float.NegativeInfinity;
+                        }
+                    }
+                }
+            }
+            else if (note.type is NoteType.Hold)
+            {
+                if (column.pressing)
+                {
+                    note.holdNote.holdJudgeState.lastHeldAt = currentBeat;
+                }
+
+                if (currentBeat - note.holdNote.holdJudgeState.lastHeldAt > holdReHoldTime)
+                {
+                    note.holdNote.holdJudgeState.lastHeldAt = float.NegativeInfinity;
+                    combo                                   = 0;
+                }
+
+                if (currentBeat >= note.holdNote.endTime)
+                {
+                    note.holdNote.holdJudgeState.lastHeldAt = float.PositiveInfinity;
+                    score++;
+                    combo++;
+                }
+            }
+            else if (note.type is NoteType.Roll)
+            {
+                // just this much should make it work... hopefully
+                if (!column.pressing)
+                {
+                    note.holdNote.holdJudgeState.lastHeldAt = currentBeat;
+                }
+
+                if (currentBeat - note.holdNote.holdJudgeState.lastHeldAt > holdReHoldTime)
+                {
+                    note.holdNote.holdJudgeState.lastHeldAt = float.NegativeInfinity;
+                    combo                                   = 0;
+                }
+
+                if (currentBeat >= note.holdNote.endTime)
+                {
+                    note.holdNote.holdJudgeState.lastHeldAt = float.PositiveInfinity;
+                    score++;
+                    combo++;
+                }
+            }
+            else if (note.type is NoteType.Mine)
+            {
+                if (column.pressing && MathF.Abs(note.singleNote.judgeTime - currentBeat) < goodWindow)
+                {
+                    note.singleNote.judgeState.judgedTime = currentBeat;
+                    combo                                 = 0;
+                    score--;
+                }
+            }
+            else if (note.type is NoteType.Lift)
+            {
+                var diff  = note.singleNote.judgeTime - currentBeat;
+                var aDiff = MathF.Abs(diff);
+
+                // miss
+                if (diff < -goodWindow)
+                {
+                    note.singleNote.judgeState.judgedTime = currentBeat;
+                    combo                                 = 0;
+                }
+
+                if (column.relasedThisFrame)
+                {
+                    // perfect or good
+                    if (aDiff < goodWindow)
+                    {
+                        note.singleNote.judgeState.judgedTime = currentBeat;
+                        combo++;
+                        score++;
+                        column.glowColor = aDiff < perfectWindow ? perfectGlowColor : goodGlowColor;
+                    }
+
+                    // bad
+                    else if (diff < badIgnoreWindow)
+                    {
+                        note.singleNote.judgeState.judgedTime = currentBeat;
+                        combo                                 = 0;
+                        column.glowColor                      = badGlowColor;
+                    }
+                }
+            }
         }
 
         // -------------------------
@@ -258,7 +416,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
         throw new UnreachableException();
     }
 
-    private SDL.FColor LerpColor(SDL.FColor a, SDL.FColor b, float t)
+    private static SDL.FColor LerpColor(SDL.FColor a, SDL.FColor b, float t)
     {
         return new SDL.FColor(
                               a.R + (b.R - a.R) * t,
@@ -268,11 +426,10 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                              );
     }
 
-    [InlineArray(Length)]
-    private struct KeyGlowStates
+    private static float InverseLerp(float from, float to, float value)
     {
-        public const byte  Length = SSCNoteRow.Length;
-        public       float state;
+        // v = f + (f-t) * p
+        return (value - from) / (to - from);
     }
 
     [InlineArray(Length)]
@@ -289,24 +446,6 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
         public bool       pressing, pressedThisFrame, relasedThisFrame;
     }
 
-    private enum Judgement
-    {
-        Unjudged  = 0,
-        Miss      = 1,
-        GoodLate  = 3,
-        Perfect   = 5,
-        GoodEarly = 4,
-        Bad       = 2,
-        MineHit   = 6,
-    }
-
-    private struct JudgeState
-    {
-        public Judgement judgement;
-        public bool      holdOngoing;
-        public float     holdEndBeat;
-    }
-
     // size: 4, align: 4
     private struct SingleNoteJudgeState
     {
@@ -317,7 +456,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
     private struct HoldNoteJudgeState
     {
         public float judgedTime;
-        public float releasedSince;
+        public float lastHeldAt;
     }
 
     // size: 12, align: 4
@@ -340,9 +479,9 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
     private struct HoldNote
     {
         [FieldOffset(0 * sizeof(float))] public float              judgeTime;
-        [FieldOffset(1 * sizeof(float))] public float              endTime;
-        [FieldOffset(2 * sizeof(float))] public HoldNoteJudgeState holdJudgeState;
-        [FieldOffset(2 * sizeof(float))] public RollJudgeState     rollJudgeState;
+        [FieldOffset(1 * sizeof(float))] public RollJudgeState     rollJudgeState;
+        [FieldOffset(1 * sizeof(float))] public HoldNoteJudgeState holdJudgeState;
+        [FieldOffset(4 * sizeof(float))] public float              endTime;
     }
 
     // size: 1, align: 1
@@ -415,15 +554,17 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                         note.type = NoteType.Lift;
                         goto case SSCNoteType.Fake;
                     case SSCNoteType.Fake:
-                        note.singleNote.judgeTime = beat;
-                        note.column               = j;
-                        note.isFake               = type is SSCNoteType.Fake;
+                        note.singleNote.judgeTime             = beat;
+                        note.singleNote.judgeState.judgedTime = float.NaN;
+                        note.column                           = j;
+                        note.isFake                           = type is SSCNoteType.Fake;
                         break;
                     case SSCNoteType.HoldHead:
                     case SSCNoteType.RollHead:
-                        note.type               = type is SSCNoteType.HoldHead ? NoteType.Hold : NoteType.Roll;
+                        note.type = type is SSCNoteType.HoldHead ? NoteType.Hold : NoteType.Roll;
                         note.holdNote.judgeTime = beat;
-                        note.column             = j;
+                        note.holdNote.holdJudgeState.judgedTime = float.NaN; // judgedTime is at the same place for both
+                        note.column = j;
                         for (var k = i; k < sscNotes.Length; ++k)
                         {
                             if (sscNotes[k].row[j] is not SSCNoteType.Tail) continue;
