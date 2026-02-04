@@ -3,402 +3,445 @@
 using SDL3;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using wah.Chart.SSC;
 
 namespace wah.Scenes;
 
 internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 {
-	private bool started;
-	private Audio.Audio audio = new Audio.Audio(simfile.Music!);
-	private TimeSpan startDelay = TimeSpan.FromSeconds(3);
-	private ColumnStates columnStates;
-	private JudgeState[,] judgeStates = new JudgeState[simfile.Charts[chartIndex].Notes.Length, SSCNoteRow.Length];
+    private bool         started;
+    private Audio.Audio  audio      = new Audio.Audio(simfile.Music!);
+    private TimeSpan     startDelay = TimeSpan.FromSeconds(3);
+    private ColumnStates columnStates;
+    private Note[]       notes = CreateNotesFrom(simfile.Charts[chartIndex].Notes);
 
-	// Countdown
-	private int countdownNumber = 3;
-	private TimeSpan countdownTimer = TimeSpan.FromSeconds(1);
-	private bool countdownOver => countdownNumber <= 0;
+    // Countdown
+    private int      countdownNumber = 3;
+    private TimeSpan countdownTimer  = TimeSpan.FromSeconds(1);
+    private bool     countdownOver => countdownNumber <= 0;
 
-	// Judgments
-	private const float perfectWindow = 0.2f;
-	private const float goodWindow = 0.4f;
+    // Judgments
+    private const float perfectWindow = 0.2f;
+    private const float goodWindow    = 0.4f;
 
-	private static readonly SDL.FColor defaultGlowColor = new(0.35f, 0.35f, 0.6f, 1f);
-	private static readonly SDL.FColor bgColor = new(0.08f, 0.08f, 0.1f, 1f);
-	private static readonly SDL.FColor columnColor = new(0.15f, 0.15f, 0.2f, 1f);
-	private static readonly SDL.FColor hitLineColor = new(1f, 1f, 1f, 1f);
-	private static readonly SDL.FColor columnSeparatorColor = new(0.05f, 0.05f, 0.05f, 1f);
-	private static readonly SDL.FColor noteColor = new(1f, 1f, 0f, 1f);
-	private static readonly SDL.FColor mineColor = new(1f, 0f, 0f, 1f);
-	private static readonly SDL.FColor liftColor = new(0f, 1f, 0f, 1f);
-	private static readonly SDL.FColor holdBodyColor = new(0.4f, 0.4f, 0f, 1f);
+    private static readonly SDL.FColor defaultGlowColor     = new(0.35f, 0.35f, 0.6f, 1f);
+    private static readonly SDL.FColor bgColor              = new(0.08f, 0.08f, 0.1f, 1f);
+    private static readonly SDL.FColor columnColor          = new(0.15f, 0.15f, 0.2f, 1f);
+    private static readonly SDL.FColor hitLineColor         = new(1f, 1f, 1f, 1f);
+    private static readonly SDL.FColor columnSeparatorColor = new(0.05f, 0.05f, 0.05f, 1f);
+    private static readonly SDL.FColor noteColor            = new(1f, 1f, 0f, 1f);
+    private static readonly SDL.FColor mineColor            = new(1f, 0f, 0f, 1f);
+    private static readonly SDL.FColor liftColor            = new(0f, 1f, 0f, 1f);
+    private static readonly SDL.FColor holdBodyColor        = new(0.4f, 0.4f, 0f, 1f);
 
-	// Combo & Score
-	private int combo = 0;
-	private int score = 0;
+    // Combo & Score
+    private int combo = 0;
+    private int score = 0;
 
-	public void OnInput(in InputEvent input)
-	{
-		if (!countdownOver) return;
-		if (input.Type != InputEvent.EventType.Key) return;
+    public void OnInput(in InputEvent input)
+    {
+        if (!countdownOver) return;
+        if (input.Type != InputEvent.EventType.Key) return;
 
-		var k = input.Key;
-		if (k.Repeat) return;
+        var k = input.Key;
+        if (k.Repeat) return;
 
-		ref var state = ref Unsafe.NullRef<ColumnInputState>();
+        ref var state = ref Unsafe.NullRef<ColumnInputState>();
 
-		switch (k.Key)
-		{
-			case SDL.Keycode.D: state = ref columnStates[0]; break;
-			case SDL.Keycode.F: state = ref columnStates[1]; break;
-			case SDL.Keycode.J: state = ref columnStates[2]; break;
-			case SDL.Keycode.K: state = ref columnStates[3]; break;
-		}
+        switch (k.Key)
+        {
+            case SDL.Keycode.D: state = ref columnStates[0]; break;
+            case SDL.Keycode.F: state = ref columnStates[1]; break;
+            case SDL.Keycode.J: state = ref columnStates[2]; break;
+            case SDL.Keycode.K: state = ref columnStates[3]; break;
+        }
 
-		if (Unsafe.IsNullRef(ref state)) return;
+        if (Unsafe.IsNullRef(ref state)) return;
 
-		state.pressing = k.Down;
-		state.pressedThisFrame = state.pressing;
-		state.relasedThisFrame = !state.pressing;
-		state.glowValue = 1;
-		state.glowColor = defaultGlowColor;
-	}
+        state.pressing         = k.Down;
+        state.pressedThisFrame = state.pressing;
+        state.relasedThisFrame = !state.pressing;
+        state.glowValue        = 1;
+        state.glowColor        = defaultGlowColor;
+    }
 
-	public void OnDrawFrame(TimeSpan deltaTime, ref WindowRenderer renderer)
-	{
-		const float columnWidth = 200f;
-		const float noteHeight = 10f;
-		var area = renderer.RenderArea;
-		float hitLineY = 100 + (area.H - 200);
+    public void OnDrawFrame(TimeSpan deltaTime, ref WindowRenderer renderer)
+    {
+        const float columnWidth = 200f;
+        const float noteHeight  = 10f;
+        var         area        = renderer.RenderArea;
+        float       hitLineY    = 100 + (area.H - 200);
 
-		// Countdown
-		if (!started)
-		{
-			startDelay -= deltaTime;
-			countdownTimer -= deltaTime;
+        // Countdown
+        if (!started)
+        {
+            startDelay     -= deltaTime;
+            countdownTimer -= deltaTime;
 
-			if (countdownTimer.Ticks <= 0 && countdownNumber > 0)
-			{
-				countdownNumber--;
-				countdownTimer = TimeSpan.FromSeconds(1);
-			}
+            if (countdownTimer.Ticks <= 0 && countdownNumber > 0)
+            {
+                countdownNumber--;
+                countdownTimer = TimeSpan.FromSeconds(1);
+            }
 
-			if (countdownNumber <= 0 && startDelay.Ticks <= 0)
-			{
-				started = true;
-				audio.Play();
-			}
+            if (countdownNumber <= 0 && startDelay.Ticks <= 0)
+            {
+                started = true;
+                audio.Play();
+            }
 
-			DrawCountdown(renderer, area);
-			return;
-		}
+            DrawCountdown(renderer, area);
+            return;
+        }
 
-		float currentBeat = BeatAt((float)audio.PlayBackPosition.TotalSeconds + simfile.Offset);
+        float currentBeat = BeatAt((float)audio.PlayBackPosition.TotalSeconds + simfile.Offset);
 
-		// -------------------------
-		// Background
-		renderer.DrawRectFilled(
-			new SDL.FRect { X = 0, Y = 0, W = area.W, H = area.H },
-			bgColor
-		);
+        // -------------------------
+        // Background
+        renderer.DrawRectFilled(
+                                new SDL.FRect { X = 0, Y = 0, W = area.W, H = area.H },
+                                bgColor
+                               );
 
-		// -------------------------
-		// Columns + glow
-		for (byte i = 0; i < 4; i++)
-		{
-			ref var state = ref columnStates[i];
-			SDL.FColor col = LerpColor(columnColor, state.glowColor, state.glowValue);
+        // -------------------------
+        // Columns + glow
+        for (byte i = 0; i < 4; i++)
+        {
+            ref var    state = ref columnStates[i];
+            SDL.FColor col   = LerpColor(columnColor, state.glowColor, state.glowValue);
 
-			renderer.DrawRectFilled(
-				new SDL.FRect { X = columnWidth * i, Y = 100, W = columnWidth, H = area.H - 200 },
-				col
-			);
+            renderer.DrawRectFilled(
+                                    new SDL.FRect { X = columnWidth * i, Y = 100, W = columnWidth, H = area.H - 200 },
+                                    col
+                                   );
 
-			renderer.DrawRectFilled(
-				new SDL.FRect { X = columnWidth * i + columnWidth - 2, Y = 100, W = 2, H = area.H - 200 },
-				columnSeparatorColor
-			);
+            renderer.DrawRectFilled(
+                                    new SDL.FRect
+                                    { X = columnWidth * i + columnWidth - 2, Y = 100, W = 2, H = area.H - 200 },
+                                    columnSeparatorColor
+                                   );
 
-			state.glowValue = Math.Max(0f, state.glowValue - (float)deltaTime.TotalSeconds * 2f);
-		}
+            state.glowValue = Math.Max(0f, state.glowValue - (float)deltaTime.TotalSeconds * 2f);
+        }
 
-		// -------------------------
-		// Notes + judgement
-		float distanceBetweenBeats = 400;
-		for (var i = 0; i < simfile.Charts[chartIndex].Notes.Length; i++)
-		{
-			ref var note = ref simfile.Charts[chartIndex].Notes[i];
-
-			for (byte j = 0; j < SSCNoteRow.Length; j++)
-			{
-				if (note.row[j] == SSCNoteType.Empty) continue;
-
-				ref var judgeState = ref judgeStates[i, j];
-				if (judgeState.judgement != Judgement.Unjudged && !judgeState.holdOngoing) continue;
-
-				if (note.row[j] == SSCNoteType.Tail) continue; // skip rendering the tail
-
-
-				float noteY =
+        // -------------------------
+        // Notes + judgement
+        float distanceBetweenBeats = 400;
+        foreach (ref readonly var note in notes.AsSpan())
+        {
+            // note.singleNote.judgeTime and note.holdNote.judgeTime are in the same place
+            float noteY =
 #if FLIP_SCROLL_DIRECTION
-					area.H + (currentBeat - note.beat.Value)
+                area.H + (currentBeat - note.singleNote.judgeTime)
 #else
-                    (note.beat.Value - currentBeat)
+                    (note.singleNote.judgeTime - currentBeat)
 #endif
-					* distanceBetweenBeats + 100;
+                * distanceBetweenBeats + 100;
 
-				if (noteY > area.H) continue;
+            if (noteY > area.H) continue;
 
-				// Draw note
-				// hold/roll body first
-				if (note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead)
-				{
-					for (var k = i + 1; k < simfile.Charts[chartIndex].Notes.Length; ++k)
-					{
-						if (simfile.Charts[chartIndex].Notes[k].row[j] != SSCNoteType.Tail) continue;
-
-						renderer.DrawRectFilled(
-							new SDL.FRect
-							{
-								X = columnWidth * j,
-								Y = noteY,
-								W = columnWidth,
-								H = (simfile.Charts[chartIndex].Notes[k].beat.Value - note.beat.Value) * distanceBetweenBeats
+            // Draw note
+            // hold/roll body first
+            if (note.type is not (NoteType.Hold or NoteType.Roll)) goto drawSingle;
+            // hold body
+            renderer.DrawRectFilled(
+                                    new SDL.FRect
+                                    {
+                                        X = columnWidth * note.column,
+                                        Y = noteY,
+                                        W = columnWidth,
+                                        H = (note.holdNote.endTime - note.holdNote.judgeTime) * distanceBetweenBeats
 #if FLIP_SCROLL_DIRECTION
-								* -1f
+                                                                                              * -1f
 #endif
-							},
-							holdBodyColor
-						);
+                                    },
+                                    holdBodyColor
+                                   );
 
-						judgeState.holdEndBeat = simfile.Charts[chartIndex].Notes[k].beat.Value;
+            drawSingle:
+            renderer.DrawRectFilled(
+                                    new SDL.FRect
+                                    { X = columnWidth * note.column, Y = noteY, W = columnWidth, H = noteHeight },
+                                    note.type switch
+                                    {
+                                        NoteType.Mine => mineColor,
+                                        NoteType.Lift => liftColor,
+                                        _             => noteColor
+                                    }
+                                   );
+        }
 
-						break;
-					}
-				}
+        // -------------------------
+        // Hit line
+        renderer.DrawRectFilled(
+                                new SDL.FRect { X = 0, Y = hitLineY, W = columnWidth * 4, H = 4 },
+                                hitLineColor
+                               );
 
-				renderer.DrawRectFilled(
-					new SDL.FRect { X = columnWidth * j, Y = noteY, W = columnWidth, H = noteHeight },
-					note.row[j] switch
-					{
-						SSCNoteType.Mine => mineColor,
-						SSCNoteType.Lift => liftColor,
-						_ => noteColor
-					}
-				);
+        // -------------------------
+        // Key caps
+        for (byte i = 0; i < SSCNoteRow.Length; ++i)
+        {
+            // hide hold bodies & missed notes
+            renderer.DrawRectFilled(
+                                    new SDL.FRect { X = columnWidth * i, Y = hitLineY, W = columnWidth, H = area.H },
+                                    columnColor
+                                   );
 
-				// judgement
-				if (judgeState.holdOngoing)
-				{
-					if (judgeState.holdEndBeat < currentBeat)
-					{
-						judgeState.holdOngoing = false;
-						combo++;
-					}
-					else if (!columnStates[j].pressing)
-					{
-						if (judgeState.holdEndBeat - currentBeat > goodWindow)
-						{
-							judgeState.holdOngoing = false;
-							judgeState.judgement = Judgement.Miss;
-							combo = 0;
-						}
+            renderer.DrawRectFilled(
+                                    new SDL.FRect
+                                    { X = columnWidth * i + 20, Y = hitLineY + 20, W = columnWidth - 40, H = 60 },
+                                    new SDL.FColor(0.25f, 0.25f, 0.3f, 1f)
+                                   );
 
-					}
-				}
-				else
-				{
-					var diff = currentBeat - note.beat.Value;
-					var aDiff = Math.Abs(diff);
+            renderer.DrawText(
+                              i switch
+                              {
+                                  0 => "D",
+                                  1 => "F",
+                                  2 => "J",
+                                  3 => "K",
+                                  _ => throw new UnreachableException()
+                              },
+                              columnWidth * i + columnWidth / 2 - 6,
+                              hitLineY                          + 35,
+                              new SDL.FColor(1f, 1f, 1f, 1f)
+                             );
+        }
 
-					if (diff > goodWindow)
-					{
-						judgeState.judgement = Judgement.Miss;
-						combo = 0;
-					}
-					else if (columnStates[j].pressedThisFrame)
-					{
-						const float badIgnoreDiff = 1 - goodWindow;
-						if (aDiff > goodWindow && aDiff < badIgnoreDiff)
-						{
-							judgeState.judgement = Judgement.Bad;
-							combo = 0;
-							columnStates[j].pressedThisFrame = false;
-							columnStates[j].glowColor = new SDL.FColor(1f, 0f, 0f, 1f);
-						}
-						else if (aDiff <= goodWindow && aDiff > perfectWindow)
-						{
-							if (note.row[j] == SSCNoteType.Mine)
-							{
-								judgeState.judgement = Judgement.MineHit;
-								combo = 0;
-								score = Math.Max(score - 1, 0);
-							}
-							else
-							{
-								judgeState.judgement = diff > 0 ? Judgement.GoodEarly : Judgement.GoodLate;
-								judgeState.holdOngoing = note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead;
-								columnStates[j].pressedThisFrame = false;
-								columnStates[j].glowColor = new SDL.FColor(0f, 1f, 0f, 1f);
-								combo++;
-								score++;
-							}
-						}
-						else
-						{
-							if (note.row[j] == SSCNoteType.Mine)
-							{
-								judgeState.judgement = Judgement.MineHit;
-								combo = 0;
-								score = Math.Max(score - 1, 0);
-							}
-							else
-							{
-								judgeState.judgement = Judgement.Perfect;
-								judgeState.holdOngoing = note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead;
-								columnStates[j].pressedThisFrame = false;
-								columnStates[j].glowColor = new SDL.FColor(0f, 0f, 1f, 1f);
-								combo++;
-								score++;
-							}
-						}
-					}
-				}
-			}
-		}
+        var judgmentYFixed = hitLineY - 50;
 
-		// -------------------------
-		// Hit line
-		renderer.DrawRectFilled(
-			new SDL.FRect { X = 0, Y = hitLineY, W = columnWidth * 4, H = 4 },
-			hitLineColor
-		);
+        // Draw combo & score
+        if (combo > 1)
+            renderer.DrawText($"COMBO {combo}", area.W / 2 - 50, judgmentYFixed - 40, new SDL.FColor(1f, 0.8f, 0f, 1f));
+        renderer.DrawText($"SCORE {score}", area.W / 2 - 50, judgmentYFixed - 70, new SDL.FColor(1f, 1f, 1f, 1f));
 
-		// -------------------------
-		// Key caps
-		for (byte i = 0; i < SSCNoteRow.Length; ++i)
-		{
-			// hide hold bodies & missed notes
-			renderer.DrawRectFilled(
-				new SDL.FRect { X = columnWidth * i, Y = hitLineY, W = columnWidth, H = area.H },
-				columnColor
-			);
+        for (byte i = 0; i < ColumnStates.Length; ++i)
+        {
+            columnStates[i].relasedThisFrame = false;
+            columnStates[i].pressedThisFrame = false;
+        }
+    }
 
-			renderer.DrawRectFilled(
-				new SDL.FRect { X = columnWidth * i + 20, Y = hitLineY + 20, W = columnWidth - 40, H = 60 },
-				new SDL.FColor(0.25f, 0.25f, 0.3f, 1f)
-			);
+    private void DrawCountdown(WindowRenderer renderer, SDL.FRect area)
+    {
+        string text = countdownNumber > 0 ? countdownNumber.ToString() : "GO!";
+        float  x    = area.W / 2 - 20;
+        float  y    = area.H / 2 - 20;
+        renderer.DrawText(text, x, y, new SDL.FColor(1f, 1f, 1f, 1f));
+    }
 
-			renderer.DrawText(
-				i switch
-				{
-					0 => "D",
-					1 => "F",
-					2 => "J",
-					3 => "K",
-					_ => throw new UnreachableException()
-				},
-				columnWidth * i + columnWidth / 2 - 6,
-				hitLineY + 35,
-				new SDL.FColor(1f, 1f, 1f, 1f)
-			);
-		}
+    private float BeatAt(float seconds)
+    {
+        float secondsPassed = 0f;
+        float beatsPassed   = 0f;
 
-		float judgmentYFixed = hitLineY - 50;
+        for (var i = 0; i < simfile.BPMs.Length; i++)
+        {
+            var     rem = seconds - secondsPassed;
+            ref var bpm = ref simfile.BPMs[i];
 
-		// Draw combo & score
-		if (combo > 1)
-			renderer.DrawText($"COMBO {combo}", area.W / 2 - 50, judgmentYFixed - 40, new SDL.FColor(1f, 0.8f, 0f, 1f));
-		renderer.DrawText($"SCORE {score}", area.W / 2 - 50, judgmentYFixed - 70, new SDL.FColor(1f, 1f, 1f, 1f));
+            if (i == simfile.BPMs.Length - 1)
+                return beatsPassed       + rem / 60 * bpm.BPM;
 
-		for (byte i = 0; i < ColumnStates.Length; ++i)
-		{
-			columnStates[i].relasedThisFrame = false;
-			columnStates[i].pressedThisFrame = false;
-		}
-	}
+            ref var next        = ref simfile.BPMs[i + 1];
+            float   durationSec = (next.FromBeat - bpm.FromBeat) / bpm.BPM * 60f;
 
-	private void DrawCountdown(WindowRenderer renderer, SDL.FRect area)
-	{
-		string text = countdownNumber > 0 ? countdownNumber.ToString() : "GO!";
-		float x = area.W / 2 - 20;
-		float y = area.H / 2 - 20;
-		renderer.DrawText(text, x, y, new SDL.FColor(1f, 1f, 1f, 1f));
-	}
+            if (rem < durationSec)
+                return beatsPassed + rem / 60 * bpm.BPM;
 
-	private float BeatAt(float seconds)
-	{
-		float secondsPassed = 0f;
-		float beatsPassed = 0f;
+            secondsPassed += durationSec;
+            beatsPassed   += durationSec / 60 * bpm.BPM;
+        }
 
-		for (var i = 0; i < simfile.BPMs.Length; i++)
-		{
-			var rem = seconds - secondsPassed;
-			ref var bpm = ref simfile.BPMs[i];
+        throw new UnreachableException();
+    }
 
-			if (i == simfile.BPMs.Length - 1)
-				return beatsPassed + rem / 60 * bpm.BPM;
+    private SDL.FColor LerpColor(SDL.FColor a, SDL.FColor b, float t)
+    {
+        return new SDL.FColor(
+                              a.R + (b.R - a.R) * t,
+                              a.G + (b.G - a.G) * t,
+                              a.B + (b.B - a.B) * t,
+                              1f
+                             );
+    }
 
-			ref var next = ref simfile.BPMs[i + 1];
-			float durationSec = (next.FromBeat - bpm.FromBeat) / bpm.BPM * 60f;
+    [InlineArray(Length)]
+    private struct KeyGlowStates
+    {
+        public const byte  Length = SSCNoteRow.Length;
+        public       float state;
+    }
 
-			if (rem < durationSec)
-				return beatsPassed + rem / 60 * bpm.BPM;
+    [InlineArray(Length)]
+    private struct ColumnStates
+    {
+        public const byte             Length = SSCNoteRow.Length;
+        private      ColumnInputState _;
+    }
 
-			secondsPassed += durationSec;
-			beatsPassed += durationSec / 60 * bpm.BPM;
-		}
+    private struct ColumnInputState
+    {
+        public SDL.FColor glowColor;
+        public float      glowValue;
+        public bool       pressing, pressedThisFrame, relasedThisFrame;
+    }
 
-		throw new UnreachableException();
-	}
+    private enum Judgement
+    {
+        Unjudged  = 0,
+        Miss      = 1,
+        GoodLate  = 3,
+        Perfect   = 5,
+        GoodEarly = 4,
+        Bad       = 2,
+        MineHit   = 6,
+    }
 
-	private SDL.FColor LerpColor(SDL.FColor a, SDL.FColor b, float t)
-	{
-		return new SDL.FColor(
-			a.R + (b.R - a.R) * t,
-			a.G + (b.G - a.G) * t,
-			a.B + (b.B - a.B) * t,
-			1f
-		);
-	}
+    private struct JudgeState
+    {
+        public Judgement judgement;
+        public bool      holdOngoing;
+        public float     holdEndBeat;
+    }
 
-	[InlineArray(Length)]
-	private struct KeyGlowStates
-	{
-		public const byte Length = SSCNoteRow.Length;
-		public float state;
-	}
+    // size: 4, align: 4
+    private struct SingleNoteJudgeState
+    {
+        public float judgedTime;
+    }
 
-	[InlineArray(Length)]
-	private struct ColumnStates
-	{
-		public const byte Length = SSCNoteRow.Length;
-		private ColumnInputState _;
-	}
+    // size: 8, align: 4
+    private struct HoldNoteJudgeState
+    {
+        public float judgedTime;
+        public float releasedSince;
+    }
 
-	private struct ColumnInputState
-	{
-		public SDL.FColor glowColor;
-		public float glowValue;
-		public bool pressing, pressedThisFrame, relasedThisFrame;
-	}
+    // size: 12, align: 4
+    private struct RollJudgeState
+    {
+        public float judgedTime;
+        public float releasedSince;
+        public float heldSince;
+    }
 
-	private enum Judgement
-	{
-		Unjudged = 0,
-		Miss = 1,
-		GoodLate = 3,
-		Perfect = 5,
-		GoodEarly = 4,
-		Bad = 2,
-		MineHit = 6,
-	}
+    // size: 8, align: 4
+    private struct SingleNote
+    {
+        public float                judgeTime;
+        public SingleNoteJudgeState judgeState;
+    }
 
-	private struct JudgeState
-	{
-		public Judgement judgement;
-		public bool holdOngoing;
-		public float holdEndBeat;
-	}
+    // size: 20, align: 4
+    [StructLayout(LayoutKind.Explicit)]
+    private struct HoldNote
+    {
+        [FieldOffset(0 * sizeof(float))] public float              judgeTime;
+        [FieldOffset(1 * sizeof(float))] public float              endTime;
+        [FieldOffset(2 * sizeof(float))] public HoldNoteJudgeState holdJudgeState;
+        [FieldOffset(2 * sizeof(float))] public RollJudgeState     rollJudgeState;
+    }
+
+    // size: 1, align: 1
+    private enum NoteType : byte
+    {
+        Tap,
+        Mine,
+        Lift,
+        Hold,
+        Roll
+    }
+
+    // size: 24 (23+1), align: 4
+    [StructLayout(LayoutKind.Explicit)]
+    private struct Note
+    {
+        [FieldOffset(0 * sizeof(float) + 0 * sizeof(byte))]
+        public SingleNote singleNote;
+
+        [FieldOffset(0 * sizeof(float) + 0 * sizeof(byte))]
+        public HoldNote holdNote;
+
+        [FieldOffset(5 * sizeof(float) + 0 * sizeof(byte))]
+        public NoteType type;
+
+        [FieldOffset(5 * sizeof(float) + 1 * sizeof(byte))]
+        public byte column;
+
+        [FieldOffset(5 * sizeof(float) + 2 * sizeof(byte))]
+        public bool isFake;
+    }
+
+    // // size: 24 (21+3), align: 4
+    // [StructLayout(LayoutKind.Explicit)]
+    // private struct Note
+    // {
+    //     [FieldOffset(0 * sizeof(float))] public SingleNote singleNote;
+    //     [FieldOffset(0 * sizeof(float))] public HoldNote   holdNote;
+    //     [FieldOffset(5 * sizeof(float))] public byte   ctrl;
+    //     // ctrl:
+    //     // 8 bits
+    //     // 0b00000001 (1st)    : isFake
+    //     // 0b00000110 (2nd-3rd): column
+    //     // 0b00000000 (4th-7th): type
+    // }
+
+    private static Note[] CreateNotesFrom(ReadOnlySpan<SSCMeasureEntry> sscNotes)
+    {
+        var notes     = new Note[sscNotes.Length * SSCNoteRow.Length];
+        var noteCount = 0;
+
+        for (ushort i = 0; i < sscNotes.Length; ++i)
+        {
+            var beat = sscNotes[i].beat.Value;
+            for (byte j = 0; j < SSCNoteRow.Length; ++j)
+            {
+                var type = sscNotes[i].row[j];
+                if (type is SSCNoteType.Empty or SSCNoteType.Tail) continue;
+                ref var note = ref notes[noteCount++];
+
+                switch (type)
+                {
+                    case SSCNoteType.Tap:
+                        note.type = NoteType.Tap;
+                        goto case SSCNoteType.Fake;
+                    case SSCNoteType.Mine:
+                        note.type = NoteType.Mine;
+                        goto case SSCNoteType.Fake;
+                    case SSCNoteType.Lift:
+                        note.type = NoteType.Lift;
+                        goto case SSCNoteType.Fake;
+                    case SSCNoteType.Fake:
+                        note.singleNote.judgeTime = beat;
+                        note.column               = j;
+                        note.isFake               = type is SSCNoteType.Fake;
+                        break;
+                    case SSCNoteType.HoldHead:
+                    case SSCNoteType.RollHead:
+                        note.type               = type is SSCNoteType.HoldHead ? NoteType.Hold : NoteType.Roll;
+                        note.holdNote.judgeTime = beat;
+                        note.column             = j;
+                        for (var k = i; k < sscNotes.Length; ++k)
+                        {
+                            if (sscNotes[k].row[j] is not SSCNoteType.Tail) continue;
+                            note.holdNote.endTime = sscNotes[k].beat.Value;
+                            break;
+                        }
+
+                        break;
+                    case SSCNoteType.Tail:
+                    case SSCNoteType.Empty:
+                    default:
+                        throw new UnreachableException();
+                }
+            }
+        }
+
+        Array.Resize(ref notes, noteCount);
+
+        return notes;
+    }
 }
