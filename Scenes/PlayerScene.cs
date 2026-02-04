@@ -269,9 +269,10 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
             else if (note.type is NoteType.Roll)
             {
                 // just this much should make it work... hopefully
-                if (!column.pressing)
+                if (column.pressedThisFrame)
                 {
                     note.holdNote.holdJudgeState.lastHeldAt = currentBeat;
+                    column.pressedThisFrame = false;
                 }
 
                 if (currentBeat - note.holdNote.holdJudgeState.lastHeldAt > holdReHoldTime)
