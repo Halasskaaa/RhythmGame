@@ -189,7 +189,6 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 				);
 
 				// judgement
-
 				if (judgeState.holdOngoing)
 				{
 					if (judgeState.holdEndBeat < currentBeat)
@@ -230,21 +229,39 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 						}
 						else if (aDiff <= goodWindow && aDiff > perfectWindow)
 						{
-							judgeState.judgement = diff > 0 ? Judgement.GoodEarly : Judgement.GoodLate;
-							judgeState.holdOngoing = note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead;
-							columnStates[j].pressedThisFrame = false;
-							columnStates[j].glowColor = new SDL.FColor(0f, 1f, 0f, 1f);
-							combo++;
-							score++;
+							if (note.row[j] == SSCNoteType.Mine)
+							{
+								judgeState.judgement = Judgement.MineHit;
+								combo = 0;
+								score = Math.Max(score - 1, 0);
+							}
+							else
+							{
+								judgeState.judgement = diff > 0 ? Judgement.GoodEarly : Judgement.GoodLate;
+								judgeState.holdOngoing = note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead;
+								columnStates[j].pressedThisFrame = false;
+								columnStates[j].glowColor = new SDL.FColor(0f, 1f, 0f, 1f);
+								combo++;
+								score++;
+							}
 						}
 						else
 						{
-							judgeState.judgement = Judgement.Perfect;
-							judgeState.holdOngoing = note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead;
-							columnStates[j].pressedThisFrame = false;
-							columnStates[j].glowColor = new SDL.FColor(0f, 0f, 1f, 1f);
-							combo++;
-							score++;
+							if (note.row[j] == SSCNoteType.Mine)
+							{
+								judgeState.judgement = Judgement.MineHit;
+								combo = 0;
+								score = Math.Max(score - 1, 0);
+							}
+							else
+							{
+								judgeState.judgement = Judgement.Perfect;
+								judgeState.holdOngoing = note.row[j] == SSCNoteType.HoldHead || note.row[j] == SSCNoteType.RollHead;
+								columnStates[j].pressedThisFrame = false;
+								columnStates[j].glowColor = new SDL.FColor(0f, 0f, 1f, 1f);
+								combo++;
+								score++;
+							}
 						}
 					}
 				}
@@ -374,7 +391,8 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 		GoodLate = 3,
 		Perfect = 5,
 		GoodEarly = 4,
-		Bad = 2
+		Bad = 2,
+		MineHit = 6,
 	}
 
 	private struct JudgeState
