@@ -11,7 +11,7 @@ namespace wah.Scenes;
 internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 {
     private bool         started;
-    private Audio.Audio  audio      = new Audio.Audio(simfile.Music!);
+    private Audio.Audio  audio      = new(simfile.Music!);
     private TimeSpan     startDelay = TimeSpan.FromSeconds(3);
     private ColumnStates columnStates;
     private Note[]       notes = CreateNotesFrom(simfile.Charts[chartIndex].Notes);
@@ -78,7 +78,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
         const float columnTopOffset    = 100;
         const float columnBottomOffset = 2 * columnTopOffset;
         var         area               = renderer.RenderArea;
-        float       hitLineY           = columnTopOffset + (area.H - columnBottomOffset);
+        var         hitLineY           = columnTopOffset + (area.H - columnBottomOffset);
 
         // Countdown
         if (!started)
@@ -97,12 +97,9 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                 started = true;
                 audio.Play();
             }
-
-            DrawCountdown(renderer, area);
-            return;
         }
 
-        float currentBeat = BeatAt((float)audio.PlayBackPosition.TotalSeconds + simfile.Offset);
+        var currentBeat = BeatAt((float)audio.PlayBackPosition.TotalSeconds + simfile.Offset - (float)startDelay.TotalSeconds);
 
         // -------------------------
         // Background
@@ -230,7 +227,8 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                         note.singleNote.judgeState.judgedTime = currentBeat;
                         combo++;
                         score++;
-                        column.glowColor = aDiff < perfectWindow ? perfectGlowColor : goodGlowColor;
+                        column.glowColor        = aDiff < perfectWindow ? perfectGlowColor : goodGlowColor;
+                        column.pressedThisFrame = false;
                     }
 
                     // bad
@@ -239,6 +237,8 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                         note.singleNote.judgeState.judgedTime = currentBeat;
                         combo                                 = 0;
                         column.glowColor                      = badGlowColor;
+                        column.pressedThisFrame               = false;
+
                         if (note.type is NoteType.Hold or NoteType.Roll)
                         {
                             note.holdNote.holdJudgeState.lastHeldAt = float.NegativeInfinity;
@@ -316,7 +316,8 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                         note.singleNote.judgeState.judgedTime = currentBeat;
                         combo++;
                         score++;
-                        column.glowColor = aDiff < perfectWindow ? perfectGlowColor : goodGlowColor;
+                        column.glowColor        = aDiff < perfectWindow ? perfectGlowColor : goodGlowColor;
+                        column.relasedThisFrame = false;
                     }
 
                     // bad
@@ -325,6 +326,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                         note.singleNote.judgeState.judgedTime = currentBeat;
                         combo                                 = 0;
                         column.glowColor                      = badGlowColor;
+                        column.relasedThisFrame               = false;
                     }
                 }
             }
@@ -380,14 +382,14 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
             columnStates[i].relasedThisFrame = false;
             columnStates[i].pressedThisFrame = false;
         }
-    }
 
-    private void DrawCountdown(WindowRenderer renderer, SDL.FRect area)
-    {
-        string text = countdownNumber > 0 ? countdownNumber.ToString() : "GO!";
-        float  x    = area.W / 2 - 20;
-        float  y    = area.H / 2 - 20;
-        renderer.DrawText(text, x, y, new SDL.FColor(1f, 1f, 1f, 1f));
+        // countdown
+        if (!started)
+        {
+            float x = columnWidth * 2 - 20;
+            float y = area.H      / 2 - 20;
+            renderer.DrawText(countdownNumber.ToString(), x, y, new SDL.FColor(1f, 1f, 1f, 1f));
+        }
     }
 
     private float BeatAt(float seconds)
