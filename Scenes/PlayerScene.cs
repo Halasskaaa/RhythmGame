@@ -138,12 +138,12 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 
         // -------------------------
         // Notes + judgement
-        float distanceBetweenBeats = 400;
+        float distanceBetweenBeats = 400 * SettingsScreen.NoteSpeed;
         foreach (ref var note in notes.AsSpan())
         {
             // note.singleNote.judgeTime and note.holdNote.judgeTime are in the same place
             // and so is judgeState.judgedTime
-
+                
             // unjudged notes have a nan value for this
             if (!float.IsNaN(note.singleNote.judgeState.judgedTime) &&
                 note.type is not (NoteType.Hold or NoteType.Roll)) continue;

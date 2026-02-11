@@ -8,6 +8,7 @@ namespace wah.Scenes
     {
         private MouseState m_State;
         private float hoverAnimation = 0f; // 0..1 for smooth hover effect
+        private float hoverAnimationSettings = 0f; // Added for settings button
 
         public void OnDrawFrame(TimeSpan deltaTime, ref WindowRenderer renderer)
         {
@@ -33,8 +34,9 @@ namespace wah.Scenes
 
             SDL.FRect btnRect = new SDL.FRect
             {
+               
                 X = centerX - ButtonW / 2,
-                Y = centerY - ButtonH / 2,
+                Y = (centerY - ButtonH / 2) - 70, 
                 W = ButtonW,
                 H = ButtonH
             };
@@ -57,7 +59,7 @@ namespace wah.Scenes
             renderer.DrawText(
                 "START",
                 centerX - 40,
-                centerY - 10,
+                btnRect.Y + (ButtonH / 2) - 10,
                 new SDL.FColor(0f, 0f, 0f, 1f)
             );
 
@@ -66,6 +68,46 @@ namespace wah.Scenes
             {
                 SceneManager.Current = new SongSelectScreen();
             }
+
+            
+            // Settings Button 
+           
+
+            SDL.FRect settingsRect = new SDL.FRect
+            {
+                X = centerX - ButtonW / 2,
+                Y = (centerY - ButtonH / 2) + 70, 
+                W = ButtonW,
+                H = ButtonH
+            };
+
+            // Hover animation
+            bool hoveringSettings = MouseOver(settingsRect);
+            hoverAnimationSettings = hoveringSettings
+                ? Math.Min(hoverAnimationSettings + (float)deltaTime.TotalSeconds * 5f, 1f)
+                : Math.Max(hoverAnimationSettings - (float)deltaTime.TotalSeconds * 5f, 0f);
+
+            // Lerp color based on hover
+            SDL.FColor settingsColor = LerpColor(baseColor, hoverColor, hoverAnimationSettings);
+
+            renderer.DrawRectFilled(settingsRect, settingsColor);
+
+            // SETTINGS text
+            renderer.DrawText(
+                "SETTINGS",
+                centerX - 60,
+                settingsRect.Y + (ButtonH / 2) - 10,
+                new SDL.FColor(0f, 0f, 0f, 1f)
+            );
+
+
+            // Click to proceed
+            if (hoveringSettings && m_State.leftClickedThisFrame)
+            {
+                SceneManager.Current = new SettingsScreen();
+            }
+
+            
 
             m_State.leftClickedThisFrame = false;
         }
