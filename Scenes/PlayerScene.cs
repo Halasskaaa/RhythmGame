@@ -391,6 +391,8 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
             float y = area.H      / 2 - 20;
             renderer.DrawText(countdownNumber.ToString(), x, y, new SDL.FColor(1f, 1f, 1f, 1f));
         }
+
+        if (audio.PlayBackPosition == audio.Length) SceneManager.Current = new SongSelectScreen();
     }
 
     private float BeatAt(float seconds)

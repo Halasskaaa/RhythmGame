@@ -9,32 +9,39 @@ namespace wah.Scenes
 
 		private static readonly DirectoryInfo PacksRoot = new("../../../test");
 
-		private ushort selectedPackIdx, selectedSongIdx;
+
+		private ushort selectedPackIdx, _selectedSongIdx = NoSelection;
+		private ushort SelectedSongIdx
+		{
+			get => _selectedSongIdx; set
+			{
+				_selectedSongIdx = value;
+
+				if (value == NoSelection) return;
+				if (PacksRoot.EnumerateDirectories()
+					.ElementAt(selectedPackIdx)
+					.EnumerateDirectories()
+					.ElementAtOrDefault(SelectedSongIdx) is not { } songRoot) return;
+				if (songRoot.EnumerateFiles("*.ssc").FirstOrDefault() is not { } sscFile) return;
+
+				previewAudio?.Stop();
+
+				using var reader = sscFile.OpenText();
+				if (new SSCParser(reader.ReadToEnd(), songRoot).Parse(out var simfile) && simfile.Music is not null)
+					previewAudio = new Audio.Audio(simfile.Music);
+
+				if (previewAudio is null) return;
+
+				previewAudio.PlayBackPosition = TimeSpan.FromSeconds(simfile.SampleStart);
+				previewAudio.Play();
+			}
+		}
 		private UIAction action;
 		private float scroll;
+		Audio.Audio? previewAudio;
 
-		// TODO: actually list charts
 		public void OnDrawFrame(TimeSpan deltaTime, ref WindowRenderer renderer)
 		{
-			//Load(new ChartPreview
-			//{
-			//    ChartPath = new("../../../test/DDDimocratic AAAnnihilation//DDDimocratic AAAnnihilation//Idol.ssc"),
-			//    AudioPath = new("../../../test/DDDimocratic AAAnnihilation//DDDimocratic AAAnnihilation//Idol.ogg"),
-			//    PreviewStart = 0,
-			//    PreviewEnd = 1,
-			//});
-
-			// test
-			//SSCSimfile simfile;
-			//var ok = new SSCParser(File.ReadAllText("../../../test/DDDimocratic AAAnnihilation/DDDimocratic AAAnnihilation/Idol/Idol.ssc"),
-			//                       new DirectoryInfo("../../../test/DDDimocratic AAAnnihilation/DDDimocratic AAAnnihilation/Idol"))
-			//   .Parse(out simfile);
-
-			//Debug.Assert(ok, "failed to parse chart");
-
-
-			//SceneManager.Current = new PlayerScene(simfile, 0);
-
 			const float itemHeight = 100;
 			const float itemWidth = 400;
 			const float subItemWidth = 360;
@@ -66,10 +73,10 @@ namespace wah.Scenes
 				{
 					foreach (var song in pack.EnumerateDirectories())
 					{
-						renderer.DrawRectFilled(songRect with { Y = y }, j == selectedSongIdx ? selectedItemColor : itemColor);
+						renderer.DrawRectFilled(songRect with { Y = y }, j == SelectedSongIdx ? selectedItemColor : itemColor);
 						renderer.DrawText(song.Name, songRect.X, y, textColor);
 
-						if (j == selectedSongIdx) selectedY = y;
+						if (j == SelectedSongIdx) selectedY = y;
 
 						y += songRect.H;
 						j++;
@@ -90,40 +97,43 @@ namespace wah.Scenes
 			switch (action)
 			{
 				case UIAction.Select:
-					if (selectedSongIdx != NoSelection)
+					if (SelectedSongIdx != NoSelection)
 					{
-						var songRoot = PacksRoot.EnumerateDirectories().ElementAt(i).EnumerateDirectories().ElementAt(j);
+						var songRoot = PacksRoot.EnumerateDirectories().ElementAt(selectedPackIdx).EnumerateDirectories().ElementAt(SelectedSongIdx);
 						if (songRoot.EnumerateFiles("*.ssc").FirstOrDefault() is not { } sscFile) break;
 						using var reader = sscFile.OpenText();
+
+						previewAudio?.Pause();
+
 						if (new SSCParser(reader.ReadToEnd(), songRoot).Parse(out var simfile) || simfile.Charts?.Length == 0) SceneManager.Current = new PlayerScene(simfile, (uint)(simfile.Charts.Length - 1));
 					}
 					else
 					{
-						selectedSongIdx = 0;
+						SelectedSongIdx = 0;
 					}
 					break;
 				case UIAction.Down:
-					if (selectedSongIdx == NoSelection)
+					if (SelectedSongIdx == NoSelection)
 					{
 						selectedPackIdx++;
 						if (selectedPackIdx > i) selectedPackIdx = 0;
 					}
 					else
 					{
-						selectedSongIdx++;
-						if (selectedSongIdx > j) selectedSongIdx = NoSelection;
+						SelectedSongIdx++;
+						if (SelectedSongIdx > j) SelectedSongIdx = NoSelection;
 					}
 					break;
 				case UIAction.Up:
-					if (selectedSongIdx == NoSelection)
+					if (SelectedSongIdx == NoSelection)
 					{
 						selectedPackIdx--;
 						if (selectedPackIdx == ushort.MaxValue) selectedPackIdx = i;
 					}
 					else
 					{
-						selectedSongIdx--;
-						if (selectedSongIdx > j) selectedSongIdx = NoSelection;
+						SelectedSongIdx--;
+						if (SelectedSongIdx > j) SelectedSongIdx = NoSelection;
 					}
 					break;
 				default: break;

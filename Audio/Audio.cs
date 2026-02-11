@@ -93,6 +93,8 @@ namespace wah.Audio
 
         ~Audio()
         {
+            Stop();
+
             if (track != IntPtr.Zero)
                 Mixer.DestroyTrack(track);
             if (audio != IntPtr.Zero)
