@@ -11,6 +11,7 @@ namespace wah.Scenes
 
 		private ushort selectedPackIdx, selectedSongIdx;
 		private UIAction action;
+		private float scroll;
 
 		// TODO: actually list charts
 		public void OnDrawFrame(TimeSpan deltaTime, ref WindowRenderer renderer)
@@ -45,7 +46,8 @@ namespace wah.Scenes
 			var area = renderer.RenderArea;
 			var i = ushort.MinValue;
 			var j = ushort.MinValue;
-			var y = 0f;
+			var y = scroll;
+			var selectedY = 0f;
 
 			var packRect = new SDL.FRect { X = area.W - itemWidth, Y = y, W = itemWidth, H = itemHeight };
 			var songRect = new SDL.FRect { X = area.W - subItemWidth, Y = y, W = subItemWidth, H = itemHeight };
@@ -56,15 +58,18 @@ namespace wah.Scenes
 				renderer.DrawRectFilled(packRect with { Y = y }, i == selectedPackIdx ? selectedItemColor : itemColor);
 				renderer.DrawText(pack.Name, packRect.X, y, textColor);
 
+				if (i == selectedPackIdx) selectedY = y;
+
 				y += packRect.H;
 
 				if (i == selectedPackIdx)
-
 				{
 					foreach (var song in pack.EnumerateDirectories())
 					{
 						renderer.DrawRectFilled(songRect with { Y = y }, j == selectedSongIdx ? selectedItemColor : itemColor);
 						renderer.DrawText(song.Name, songRect.X, y, textColor);
+
+						if (j == selectedSongIdx) selectedY = y;
 
 						y += songRect.H;
 						j++;
@@ -79,6 +84,9 @@ namespace wah.Scenes
 			// i is max idx + 1 AKA pack count
 			i--;
 
+			if (selectedY < area.Y) scroll += itemHeight;
+			if (selectedY > area.Y + area.H) scroll -= itemHeight;
+
 			switch (action)
 			{
 				case UIAction.Select:
@@ -87,7 +95,7 @@ namespace wah.Scenes
 						var songRoot = PacksRoot.EnumerateDirectories().ElementAt(i).EnumerateDirectories().ElementAt(j);
 						if (songRoot.EnumerateFiles("*.ssc").FirstOrDefault() is not { } sscFile) break;
 						using var reader = sscFile.OpenText();
-						if (new SSCParser(reader.ReadToEnd(), songRoot).Parse(out var simfile) || simfile.Charts?.Length == 0) SceneManager.Current = new PlayerScene(simfile, 0);
+						if (new SSCParser(reader.ReadToEnd(), songRoot).Parse(out var simfile) || simfile.Charts?.Length == 0) SceneManager.Current = new PlayerScene(simfile, (uint)(simfile.Charts.Length - 1));
 					}
 					else
 					{
@@ -103,7 +111,7 @@ namespace wah.Scenes
 					else
 					{
 						selectedSongIdx++;
-						if (selectedSongIdx > j) selectedSongIdx = 0;
+						if (selectedSongIdx > j) selectedSongIdx = NoSelection;
 					}
 					break;
 				case UIAction.Up:
