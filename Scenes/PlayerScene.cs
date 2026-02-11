@@ -317,6 +317,16 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 			columnStates[i].relasedThisFrame = false;
 			columnStates[i].pressedThisFrame = false;
 		}
+
+		if (audio.PlayBackPosition == audio.Length) {
+			Judgement[] totalJudgements = new Judgement[judgeStates.Length];
+			var i = 0;
+			foreach (var judgement in judgeStates)
+			{
+				totalJudgements[i++] = judgement.judgement;
+			}
+			SceneManager.Current = new SongSelectScreen();
+		}
 	}
 
 	private void DrawCountdown(WindowRenderer renderer, SDL.FRect area)
