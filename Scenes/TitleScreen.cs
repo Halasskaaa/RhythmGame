@@ -1,6 +1,4 @@
-﻿using System;
-using SDL3;
-using wah.Util;
+﻿using SDL3;
 
 namespace wah.Scenes
 {
@@ -9,6 +7,13 @@ namespace wah.Scenes
         private MouseState m_State;
         private float hoverAnimation = 0f; // 0..1 for smooth hover effect
         private float hoverAnimationSettings = 0f; // Added for settings button
+
+        private static readonly MenuButton[] buttons =
+        {
+            new("START", 40, ()=> SceneManager.Current = new SongSelectScreen()),
+            new("SETTINS", 60, ()=> SceneManager.Current = new SettingsScreen()),
+            new("EXIT", 40, () => Environment.Exit(0))
+        };
 
         public void OnDrawFrame(TimeSpan deltaTime, ref WindowRenderer renderer)
         {
@@ -25,91 +30,55 @@ namespace wah.Scenes
                 );
             }
 
+
+
             // --------------------------
             // Button dimensions
-            float ButtonW = 300f;
-            float ButtonH = 120f;
-            float centerX = area.W / 2;
-            float centerY = area.H / 2;
+            const float ButtonW = 300f;
+            const float ButtonH = 120f;
+            const float ItemGap = 10;
+            var centerX = area.W / 2;
+            var centerY = area.H / 2;
 
-            SDL.FRect btnRect = new SDL.FRect
+            var y = centerY - ButtonH / 2 - 70;
+            foreach (ref readonly var button in buttons.AsSpan())
             {
-               
-                X = centerX - ButtonW / 2,
-                Y = (centerY - ButtonH / 2) - 70, 
-                W = ButtonW,
-                H = ButtonH
-            };
+				SDL.FRect btnRect = new SDL.FRect
+				{
 
-            // Hover animation
-            bool hovering = MouseOver(btnRect);
-            hoverAnimation = hovering
-                ? Math.Min(hoverAnimation + (float)deltaTime.TotalSeconds * 5f, 1f)
-                : Math.Max(hoverAnimation - (float)deltaTime.TotalSeconds * 5f, 0f);
+					X = centerX - ButtonW / 2,
+					Y = y,
+					W = ButtonW,
+					H = ButtonH
+				};
 
-            SDL.FColor baseColor = new SDL.FColor(0.8f, 0.8f, 0.8f, 1f);
-            SDL.FColor hoverColor = new SDL.FColor(1f, 0.9f, 0.3f, 1f);
+				// Hover animation
+				bool hovering = MouseOver(btnRect);
+				hoverAnimation = hovering
+					? Math.Min(hoverAnimation + (float)deltaTime.TotalSeconds * 5f, 1f)
+					: Math.Max(hoverAnimation - (float)deltaTime.TotalSeconds * 5f, 0f);
 
-            // Lerp color based on hover
-            SDL.FColor buttonColor = LerpColor(baseColor, hoverColor, hoverAnimation);
+				SDL.FColor baseColor = new SDL.FColor(0.8f, 0.8f, 0.8f, 1f);
+				SDL.FColor hoverColor = new SDL.FColor(1f, 0.9f, 0.3f, 1f);
 
-            renderer.DrawRectFilled(btnRect, buttonColor);
+				// Lerp color based on hover
+				SDL.FColor buttonColor = LerpColor(baseColor, hoverColor, hoverAnimation);
 
-            // START text
-            renderer.DrawText(
-                "START",
-                centerX - 40,
-                btnRect.Y + (ButtonH / 2) - 10,
-                new SDL.FColor(0f, 0f, 0f, 1f)
-            );
+				renderer.DrawRectFilled(btnRect, buttonColor);
 
-            // Click to proceed
-            if (hovering && m_State.leftClickedThisFrame)
-            {
-                SceneManager.Current = new SongSelectScreen();
-            }
+				renderer.DrawText(
+					button.Text,
+					centerX - button.TextWidth,
+					btnRect.Y + (ButtonH / 2) - 10,
+					new SDL.FColor(0f, 0f, 0f, 1f)
+				);
 
-            
-            // Settings Button 
-           
+				if (hovering && m_State.leftClickedThisFrame) button.OnClick();
 
-            SDL.FRect settingsRect = new SDL.FRect
-            {
-                X = centerX - ButtonW / 2,
-                Y = (centerY - ButtonH / 2) + 70, 
-                W = ButtonW,
-                H = ButtonH
-            };
+				y += ButtonH + ItemGap;
+			}
 
-            // Hover animation
-            bool hoveringSettings = MouseOver(settingsRect);
-            hoverAnimationSettings = hoveringSettings
-                ? Math.Min(hoverAnimationSettings + (float)deltaTime.TotalSeconds * 5f, 1f)
-                : Math.Max(hoverAnimationSettings - (float)deltaTime.TotalSeconds * 5f, 0f);
-
-            // Lerp color based on hover
-            SDL.FColor settingsColor = LerpColor(baseColor, hoverColor, hoverAnimationSettings);
-
-            renderer.DrawRectFilled(settingsRect, settingsColor);
-
-            // SETTINGS text
-            renderer.DrawText(
-                "SETTINGS",
-                centerX - 60,
-                settingsRect.Y + (ButtonH / 2) - 10,
-                new SDL.FColor(0f, 0f, 0f, 1f)
-            );
-
-
-            // Click to proceed
-            if (hoveringSettings && m_State.leftClickedThisFrame)
-            {
-                SceneManager.Current = new SettingsScreen();
-            }
-
-            
-
-            m_State.leftClickedThisFrame = false;
+			m_State.leftClickedThisFrame = false;
         }
 
         public void OnInput(in InputEvent input)
@@ -143,5 +112,7 @@ namespace wah.Scenes
             public SDL.FPoint pos;
             public bool leftClickedThisFrame;
         }
+
+        private readonly record struct MenuButton(string Text, float TextWidth, Action OnClick);
     }
 }
