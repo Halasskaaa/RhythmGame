@@ -138,7 +138,8 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 
         // -------------------------
         // Notes + judgement
-        float distanceBetweenBeats = 400 * SettingsScreen.NoteSpeed;
+        const float distanceBetweenBeats = 400f;
+        float noteSpeed = distanceBetweenBeats * SettingsScreen.NoteSpeed;
         foreach (ref var note in notes.AsSpan())
         {
             // note.singleNote.judgeTime and note.holdNote.judgeTime are in the same place
@@ -157,7 +158,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
 #else
                     (note.singleNote.judgeTime - currentBeat)
 #endif
-                * distanceBetweenBeats + columnTopOffset;
+                * noteSpeed + columnTopOffset;
 
 #if FLIP_SCROLL_DIRECTION
             if (noteY < columnTopOffset - noteHeight) continue;
@@ -175,7 +176,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
                                         X = columnWidth * note.column,
                                         Y = noteY,
                                         W = columnWidth,
-                                        H = (note.holdNote.endTime - note.holdNote.judgeTime) * distanceBetweenBeats
+                                        H = (note.holdNote.endTime - note.holdNote.judgeTime) * noteSpeed
 #if FLIP_SCROLL_DIRECTION
                                                                                               * -1f
 #endif

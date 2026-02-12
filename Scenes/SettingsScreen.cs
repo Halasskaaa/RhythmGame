@@ -88,7 +88,7 @@ namespace wah.Scenes
             
             if (input.Type == InputEvent.EventType.Key && input.Key.Down)
             {
-                if (input.Key.Raw == (ushort)SDL.Scancode.Escape)
+                if (input.Key.Key == SDL.Keycode.Escape)
                 {
                     SceneManager.Current = new TitleScreen();
                 }
