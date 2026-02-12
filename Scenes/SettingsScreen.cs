@@ -8,9 +8,6 @@ namespace wah.Scenes
     {
         private MouseState m_State;
 
-        // Static so the value persists across all scenes
-        public static float NoteSpeed = 1.0f;
-
         // Hover animation 
         private float hoverPlus = 0f;
         private float hoverMinus = 0f;
@@ -36,7 +33,7 @@ namespace wah.Scenes
             renderer.DrawText("SETTINGS", centerX - 60, 50, white);
 
             // Note Speed UI logic
-            renderer.DrawText($"NOTE SPEED: {NoteSpeed:F1}x", centerX - 100, centerY, white);
+            renderer.DrawText($"NOTE SPEED: {GameSettings.noteSpeed:F1}x", centerX - 100, centerY, white);
 
             // Minus Button Rect
             SDL.FRect minusBtn = new SDL.FRect { X = centerX - 150, Y = centerY - 5, W = 40, H = 40 };
@@ -50,7 +47,7 @@ namespace wah.Scenes
 
             if (hoveringMinus && m_State.leftClickedThisFrame)
             {
-                NoteSpeed = Math.Max(0.1f, NoteSpeed - 0.1f);
+				GameSettings.noteSpeed = Math.Max(0.1f, GameSettings.noteSpeed - 0.1f);
             }
 
             // Plus Button Rect
@@ -65,7 +62,7 @@ namespace wah.Scenes
 
             if (hoveringPlus && m_State.leftClickedThisFrame)
             {
-                NoteSpeed = Math.Min(10.0f, NoteSpeed + 0.1f);
+                GameSettings.noteSpeed = Math.Min(10.0f, GameSettings.noteSpeed + 0.1f);
             }
 
             

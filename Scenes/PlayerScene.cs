@@ -139,7 +139,7 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
         // -------------------------
         // Notes + judgement
         const float distanceBetweenBeats = 400f;
-        float noteSpeed = distanceBetweenBeats * SettingsScreen.NoteSpeed;
+        float noteSpeed = distanceBetweenBeats * GameSettings.noteSpeed;
         foreach (ref var note in notes.AsSpan())
         {
             // note.singleNote.judgeTime and note.holdNote.judgeTime are in the same place
