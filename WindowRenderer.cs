@@ -52,12 +52,25 @@ namespace wah
             textRenderer.RenderText(in text, x, y);
         }
 
-        public void DrawText(in string text, in float x, in float y, SDL.FColor color)
+		public void DrawTextCentered(in string text, float x, float y)
+		{
+			textRenderer.RenderTextCentered(in text, x, y);
+		}
+
+		public void DrawText(in string text, in float x, in float y, SDL.FColor color)
         {
             var prev = FDrawColor;
             FDrawColor = color;
             DrawText(in text, x, y);
             FDrawColor = prev;
         }
-    }
+
+		public void DrawTextCentered(in string text, in float x, in float y, SDL.FColor color)
+		{
+			var prev = FDrawColor;
+			FDrawColor = color;
+			DrawTextCentered(in text, x, y);
+			FDrawColor = prev;
+		}
+	}
 }

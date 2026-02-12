@@ -10,9 +10,9 @@ namespace wah.Scenes
 
         private static readonly MenuButton[] buttons =
         {
-            new("START", 40, ()=> SceneManager.Current = new SongSelectScreen()),
-            new("SETTINS", 60, ()=> SceneManager.Current = new SettingsScreen()),
-            new("EXIT", 40, () => Environment.Exit(0))
+            new("START", ()=> SceneManager.Current = new SongSelectScreen()),
+            new("SETTINS", ()=> SceneManager.Current = new SettingsScreen()),
+            new("EXIT", () => Environment.Exit(0))
         };
 
         public void OnDrawFrame(TimeSpan deltaTime, ref WindowRenderer renderer)
@@ -66,10 +66,10 @@ namespace wah.Scenes
 
 				renderer.DrawRectFilled(btnRect, buttonColor);
 
-				renderer.DrawText(
+				renderer.DrawTextCentered(
 					button.Text,
-					centerX - button.TextWidth,
-					btnRect.Y + (ButtonH / 2) - 10,
+					centerX,
+					btnRect.Y + (ButtonH / 2),
 					new SDL.FColor(0f, 0f, 0f, 1f)
 				);
 
@@ -113,6 +113,6 @@ namespace wah.Scenes
             public bool leftClickedThisFrame;
         }
 
-        private readonly record struct MenuButton(string Text, float TextWidth, Action OnClick);
+        private readonly record struct MenuButton(string Text, Action OnClick);
     }
 }

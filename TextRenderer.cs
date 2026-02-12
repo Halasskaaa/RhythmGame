@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using SDL3;
+﻿using SDL3;
 
 internal class TextRenderer
 {
@@ -40,6 +36,31 @@ internal class TextRenderer
         
         TTF.DestroyText(textObject);
     }
+
+    public void RenderTextCentered(in string text, float x, float y)
+    {
+		var textObject = TTF.CreateText(textEngine, font, text, (nuint)text.Length);
+		if (textObject == IntPtr.Zero)
+		{
+			SDL.LogError(SDL.LogCategory.Application, $"failed to create text object: {SDL.GetError()}");
+			return;
+		}
+
+        if (!TTF.GetTextSize(textObject, out var width, out var height))
+        {
+			SDL.LogError(SDL.LogCategory.Application, $"failed to get text size: {SDL.GetError()}");
+		}
+
+        x -= width / 2f;
+        y -= height / 2f;
+
+		if (!TTF.DrawRendererText(textObject, x, y))
+		{
+			SDL.LogError(SDL.LogCategory.Render, $"failed to render text object: {SDL.GetError()}");
+		}
+
+		TTF.DestroyText(textObject);
+	}
 
     ~TextRenderer()
     {
