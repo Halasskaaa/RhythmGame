@@ -63,7 +63,7 @@ namespace wah.Scenes
 			{
 
 				renderer.DrawRectFilled(packRect with { Y = y }, i == selectedPackIdx ? selectedItemColor : itemColor);
-				renderer.DrawText(pack.Name, packRect.X, y, textColor);
+				renderer.DrawTextCentered(pack.Name, packRect.X + packRect.W / 2f, y + packRect.H / 2f, textColor);
 
 				if (i == selectedPackIdx) selectedY = y;
 
@@ -74,7 +74,7 @@ namespace wah.Scenes
 					foreach (var song in pack.EnumerateDirectories())
 					{
 						renderer.DrawRectFilled(songRect with { Y = y }, j == SelectedSongIdx ? selectedItemColor : itemColor);
-						renderer.DrawText(song.Name, songRect.X, y, textColor);
+						renderer.DrawTextCentered(song.Name, songRect.X + songRect.W / 2f, y + songRect.H / 2f, textColor);
 
 						if (j == SelectedSongIdx) selectedY = y;
 
@@ -157,6 +157,8 @@ namespace wah.Scenes
 				SDL.Keycode.Up => UIAction.Up,
 				_ => UIAction.None
 			};
+
+			if (k.Key == SDL.Keycode.Escape) SceneManager.Current = new TitleScreen();
 		}
 
 		private enum UIAction

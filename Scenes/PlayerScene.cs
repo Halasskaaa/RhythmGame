@@ -52,7 +52,9 @@ internal class PlayerScene(SSCSimfile simfile, uint chartIndex) : IScene
         var k = input.Key;
         if (k.Repeat) return;
 
-        ref var state = ref Unsafe.NullRef<ColumnInputState>();
+		if (k.Key == SDL.Keycode.Escape) SceneManager.Current = new TitleScreen();
+
+		ref var state = ref Unsafe.NullRef<ColumnInputState>();
 
         switch (k.Key)
         {
